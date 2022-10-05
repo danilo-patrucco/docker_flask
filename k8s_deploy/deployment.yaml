@@ -1,0 +1,137 @@
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: flask-role
+  namespace: %%NAMESPACE%%
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+...
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: flask-sa
+  namespace: %%NAMESPACE%%
+...
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: flask-rolebinding
+  namespace: %%NAMESPACE%%
+subjects:
+  - kind: ServiceAccount
+    name: flask-sa
+    namespace: %%NAMESPACE%%
+roleRef:
+  kind: Role
+  name: flask-role
+  apiGroup: rbac.authorization.k8s.io
+...
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: flask-clusterrole
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+...
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: flask-%%NAMESPACE%%-clusterrolebinding
+subjects:
+  - kind: ServiceAccount
+    name: flask-sa
+    namespace: %%NAMESPACE%%
+roleRef:
+  kind: ClusterRole
+  name: flask-clusterrole
+  apiGroup: rbac.authorization.k8s.io
+...
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: flask
+  namespace: %%NAMESPACE%%
+spec:
+  ports:
+  - port: 5000
+    name: http-flask-5000
+  selector:
+    app: flask
+...
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: flask
+  namespace: %%NAMESPACE%%
+  annotations:
+    app.kubernetes.io/name: %%NAMESPACE%%-flask
+spec:
+  replicas: %%BACKENDREPLICAS%%
+  selector:
+    matchLabels:
+      app: flask
+  template:
+    metadata:
+      labels:
+        app: flask
+    spec:
+      serviceAccountName: flask-sa
+      containers:
+      - name: flask
+        image: "%%DOCKERREPO%%/%%PREFIX%%-back-end:%%TAGVER%%"
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: flask
+        workingDir: /home/node/package
+        command:
+        - /bin/bash
+        - -c
+        args:
+        - |
+          /bin/entrypoint.sh;
+        volumeMounts:
+        - mountPath: /keys/private.key
+          name: configmap-keys-volume
+          subPath: private.key
+        env:
+        - name: FLASK_APP
+          value: "app"
+        - name: PORT
+          value: 5000
+        - name: FLASK_RUN_HOST
+          value: 0.0.0.0
+        - name: FLASK_ENV
+          value: development
+        - name: PATH
+          value: "/home/myuser/.local/bin:${PATH}"
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 9999
+          failureThreshold: 1
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /live
+            port: 9999
+          failureThreshold: 3
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 5
+...
